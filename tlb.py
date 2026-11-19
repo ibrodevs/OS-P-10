@@ -48,8 +48,20 @@ class TLB:
 
     @property
     def hit_rate(self) -> float:
+        """Доля TLB hit среди ВСЕХ обращений, включая page faults."""
         total = self.hits + self.misses
         return self.hits / total if total else 0.0
+
+    @property
+    def successful_accesses(self) -> int:
+        """Обращения, получившие физический адрес (без page faults)."""
+        return self.hits + self.misses - self.page_faults
+
+    @property
+    def successful_hit_rate(self) -> float | None:
+        """Доля hit среди завершённых обращений; None при их отсутствии."""
+        completed = self.successful_accesses
+        return self.hits / completed if completed else None
 
 
 def simulate(references: list[int], capacity: int, table: dict[int, int | None]) -> TLB:
@@ -134,11 +146,17 @@ def main() -> None:
         print(f'{address:5} | {"HIT " if a.tlb_hit else "MISS"} | {"PAGE FAULT" if a.page_fault else a.physical}')
     print(f'TLB K={args.size}: hit={tlb.hits}, miss={tlb.misses}, '
           f'page faults={tlb.page_faults}, hit rate={tlb.hit_rate:.2%}')
-    print('EAT (только завершённые обращения, без штрафа за page fault): '
-          f'{effective_access_ns(tlb.hit_rate):.2f} нс (один уровень), '
-          f'{effective_access_ns(tlb.hit_rate, levels=2):.2f} нс (два уровня)')
-    print('Внимание: EAT по всем обращениям является оценкой при условии отсутствия page faults; '
-          'при реальных отказах нужен отдельный штраф и модель обработки.')
+    completed_hit_rate = tlb.successful_hit_rate
+    if completed_hit_rate is None:
+        print('EAT: не определено — нет успешно завершённых обращений.')
+    else:
+        print(f'Успешных обращений: {tlb.successful_accesses}; '
+              f'hit rate среди успешных={completed_hit_rate:.2%}')
+        print('EAT (только успешные обращения, без page faults): '
+              f'{effective_access_ns(completed_hit_rate):.2f} нс (один уровень), '
+              f'{effective_access_ns(completed_hit_rate, levels=2):.2f} нс (два уровня)')
+    print('Внимание: в EAT не входит время обработки страничных отказов. '
+          'Реальное EAT всей трассы требует модели загрузки отсутствующих страниц.')
 
 
 if __name__ == '__main__':
