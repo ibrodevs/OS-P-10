@@ -5,8 +5,23 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
+
+/* PFNs are visible only with CAP_SYS_ADMIN on recent Linux kernels.
+   Child/parent will compare numeric PFNs if the OS allows it. */
+static uint64_t physical_frame(void *address) {
+    long ps = sysconf(_SC_PAGESIZE);
+    int fd = open("/proc/self/pagemap", O_RDONLY);
+    if (ps < 1 || fd < 0) return 0;
+    uint64_t raw = 0;
+    off_t offset = (off_t)((uintptr_t)address / (uintptr_t)ps * 8ULL);
+    ssize_t count = pread(fd, &raw, sizeof(raw), offset);
+    close(fd);
+    if (count != sizeof(raw) || !(raw & (1ULL << 63))) return 0;
+    return raw & ((1ULL << 55) - 1);
+}
 
 /* Two processes use different virtual addresses mapping the same file page. */
 int main(void) {
@@ -20,8 +35,10 @@ int main(void) {
                                  MAP_SHARED, fd, 0);
     if (parent == MAP_FAILED) { perror("mmap parent"); close(fd); return 1; }
     parent[0] = 17;
+    uint64_t pfn_parent = physical_frame(parent);
     setvbuf(stdout, NULL, _IONBF, 0);
-    printf("parent PID=%ld virtual=%p initial=%u\n", (long)getpid(), (void*)parent, parent[0]);
+    printf("parent PID=%ld virtual=%p initial=%u pfn=%" PRIu64 "\n",
+           (long)getpid(), (void*)parent, parent[0], pfn_parent);
     pid_t child = fork();
     if (child < 0) { perror("fork"); return 1; }
     if (child == 0) {
@@ -33,6 +50,14 @@ int main(void) {
                (long)getpid(), (void*)other, other[0]);
         if (other == parent) { fputs("Unexpected identical virtual mapping\n", stderr); _exit(3); }
         other[0] = 99;
+        uint64_t pfn_child = physical_frame(other);
+        printf("child pfn=%" PRIu64 " (compare with parent PFN when both nonzero)\n", pfn_child);
+        if (pfn_parent && pfn_child && pfn_parent != pfn_child) {
+            fputs("Unexpected PFN mismatch!\n", stderr);
+            _exit(4);
+        }
+        if (!pfn_parent || !pfn_child)
+            puts("PFN unavailable (kernel masks it without CAP_SYS_ADMIN); shared write is still observable.");
         printf("child changed data; inherited_mapping_reads=%u\n", parent[0]);
         munmap(other, (size_t)size);
         _exit(0);
