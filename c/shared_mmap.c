@@ -64,9 +64,12 @@ int main(void) {
     }
     int status = 0;
     if (waitpid(child, &status, 0) < 0) { perror("waitpid"); return 1; }
+    unsigned int observed = parent[0];
+    int child_ok = WIFEXITED(status) && WEXITSTATUS(status) == 0;
     printf("parent reads after child=%u; child exited=%d\n",
-           parent[0], WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+           observed, WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+    if (observed != 99) fputs("ERROR: parent did not observe the child's write!\n", stderr);
     munmap(parent, (size_t)size);
     close(fd);
-    return WIFEXITED(status) && WEXITSTATUS(status) == 0 && parent != NULL ? 0 : 1;
+    return child_ok && observed == 99 ? 0 : 1;
 }
