@@ -75,10 +75,14 @@ def main() -> None:
     print('\nrefs.txt:')
     for k in (1, 2, 3, 4, 8):
         s = simulate(short, k, table)
+        completed = s.successful_hit_rate
+        eat = f'{effective_access_ns(completed):.2f} нс' if completed is not None else 'нет успешных обращений'
+        completed_display = f'{completed:.2%}' if completed is not None else 'не определена'
         print(f'K={k}: hit={s.hits}, miss={s.misses}, page faults={s.page_faults}, '
-              f'hit rate={s.hit_rate:.2%}, EAT≈{effective_access_ns(s.hit_rate):.2f} нс*')
-    print('*EAT без стоимости page faults, поэтому для трассы с отсутствующей страницей '
-          'это условная оценка.')
+              f'hit rate всех={s.hit_rate:.2%}, hit rate успешных={completed_display}, '
+              f'EAT успешных≈{eat}*')
+    print('*EAT относится только к успешно завершённым обращениям: стоимость обработки '
+          'page faults не включена.')
     print('Теоретическое EAT при h=0,0.5,0.9,1:')
     for h in (0, 0.5, 0.9, 1):
         print(f'h={h:.0%}: {effective_access_ns(h):.0f} нс')
