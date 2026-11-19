@@ -1,0 +1,29 @@
+name: Check OS P10
+on:
+  push:
+  pull_request:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python tests
+        run: python -m unittest discover -s tests -v
+      - name: Generate chart and validate deterministic results
+        run: |
+          python translate.py
+          python tlb.py --size 3 --walk 1200
+          python analysis.py
+          git diff --exit-code -- figures/tlb_hit_rate.svg
+      - name: Build C programs
+        run: make -C c
+      - name: Safe C smoke tests
+        run: |
+          ./c/bin/pagemap_demo
+          ./c/bin/shared_mmap
+          ./c/bin/locality_bench 256
+          ./c/bin/tlb_bench --mib 4 --stride 4096 --rounds 2
+          ./c/bin/faults_bench --mib 4 --rounds 1
